@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Signing in…</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; display: flex; align-items: center;
+           justify-content: center; height: 100vh; margin: 0; background: #f8f9fa; }
+    .box { text-align: center; }
+    .icon { font-size: 40px; margin-bottom: 12px; }
+    .msg { font-size: 15px; color: #444; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="icon">🍽️</div>
+    <div class="msg" id="msg">Completing sign-in…</div>
+  </div>
+  <script>
+    // This page receives Google's OAuth redirect and forwards
+    // the token back to the opener window via postMessage, then closes.
+    (function() {
+      var hash   = window.location.hash.substring(1);   // after #
+      var search = window.location.search.substring(1); // after ?
+      var raw    = hash || search;
+      var params = new URLSearchParams(raw);
+
+      var accessToken = params.get('access_token');
+      var idToken     = params.get('id_token');
+      var error       = params.get('error');
+
+      if (!window.opener) {
+        document.getElementById('msg').textContent = 'No opener found. Please close this window and try again.';
+        return;
+      }
+
+      if (error) {
+        window.opener.postMessage({ type: 'GOOGLE_OAUTH_RESULT', error: error }, '*');
+      } else if (accessToken || idToken) {
+        window.opener.postMessage({
+          type: 'GOOGLE_OAUTH_RESULT',
+          accessToken: accessToken,
+          idToken: idToken
+        }, '*');
+      } else {
+        document.getElementById('msg').textContent = 'No token received. Please close and try again.';
+        return;
+      }
+
+      setTimeout(function() { window.close(); }, 500);
+    })();
+  </script>
+</body>
+</html>
