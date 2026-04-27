@@ -4,50 +4,70 @@
   <meta charset="UTF-8">
   <title>Signing in…</title>
   <style>
-    body { font-family: -apple-system, sans-serif; display: flex; align-items: center;
-           justify-content: center; height: 100vh; margin: 0; background: #f8f9fa; }
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+           display: flex; align-items: center; justify-content: center;
+           height: 100vh; margin: 0; background: #f8f9fa; }
     .box { text-align: center; }
     .icon { font-size: 40px; margin-bottom: 12px; }
-    .msg { font-size: 15px; color: #444; }
+    .msg  { font-size: 15px; color: #444; margin-bottom: 8px; }
+    .sub  { font-size: 12px; color: #999; }
   </style>
 </head>
 <body>
   <div class="box">
     <div class="icon">🍽️</div>
     <div class="msg" id="msg">Completing sign-in…</div>
+    <div class="sub" id="sub">This window will close automatically.</div>
   </div>
   <script>
-    // This page receives Google's OAuth redirect and forwards
-    // the token back to the opener window via postMessage, then closes.
-    (function() {
-      var hash   = window.location.hash.substring(1);   // after #
-      var search = window.location.search.substring(1); // after ?
-      var raw    = hash || search;
+    (function () {
+      var raw    = window.location.hash.substring(1) || window.location.search.substring(1);
       var params = new URLSearchParams(raw);
-
       var accessToken = params.get('access_token');
       var idToken     = params.get('id_token');
       var error       = params.get('error');
-
-      if (!window.opener) {
-        document.getElementById('msg').textContent = 'No opener found. Please close this window and try again.';
-        return;
-      }
+      var tok         = accessToken || idToken;
 
       if (error) {
-        window.opener.postMessage({ type: 'GOOGLE_OAUTH_RESULT', error: error }, '*');
-      } else if (accessToken || idToken) {
-        window.opener.postMessage({
-          type: 'GOOGLE_OAUTH_RESULT',
-          accessToken: accessToken,
-          idToken: idToken
-        }, '*');
-      } else {
-        document.getElementById('msg').textContent = 'No token received. Please close and try again.';
+        document.getElementById('msg').textContent = 'Sign-in failed: ' + error;
+        document.getElementById('sub').textContent = 'Please close this window and try again.';
+        try { window.opener && window.opener.postMessage({ type: 'GOOGLE_OAUTH_RESULT', error: error }, '*'); } catch(e){}
+        try { window.parent && window.parent.postMessage({ type: 'GOOGLE_OAUTH_RESULT', error: error }, '*'); } catch(e){}
         return;
       }
 
-      setTimeout(function() { window.close(); }, 500);
+      if (!tok) {
+        document.getElementById('msg').textContent = 'No token received.';
+        document.getElementById('sub').textContent = 'Please close this window and try again.';
+        return;
+      }
+
+      // Method 1: set document.title — parent polls popup.document.title
+      try { document.title = 'tok:' + tok; } catch(e) {}
+
+      // Method 2: postMessage to opener and parent
+      var result = { type: 'GOOGLE_OAUTH_RESULT', accessToken: accessToken, idToken: idToken };
+      function tryPost() {
+        var ok = false;
+        try { if (window.opener && !window.opener.closed) { window.opener.postMessage(result, '*'); ok = true; } } catch(e){}
+        try { if (window.parent !== window) { window.parent.postMessage(result, '*'); ok = true; } } catch(e){}
+        return ok;
+      }
+
+      document.getElementById('msg').textContent = 'Signed in! Returning…';
+      document.getElementById('sub').textContent = 'This window will close shortly.';
+
+      // Try immediately, then retry every 400ms for 6 seconds
+      tryPost();
+      var attempts = 0;
+      var t = setInterval(function() {
+        attempts++;
+        tryPost();
+        if (attempts >= 15) { clearInterval(t); window.close(); }
+      }, 400);
+
+      // Close after 7 seconds regardless
+      setTimeout(function() { clearInterval(t); window.close(); }, 7000);
     })();
   </script>
 </body>
